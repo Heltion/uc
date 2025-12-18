@@ -159,27 +159,34 @@ impl Core {
             if let Some(packets) = queue.remove(&t) {
                 active.extend(packets);
             }
-            let core = (t - 1) % self.config.number_of_cores + 1;
-            if self.last_time[core] > t || active.is_empty() {
-                continue;
-            }
-            let mut to_execute: Vec<Packet> = active.split_off(active.len() - 1);
-            active.sort_by_key(|p| std::cmp::Reverse(p.arrive + p.timeout));
-            let node_id = self.get_current_node_id(&to_execute[0]);
-            for i in (0..active.len()).rev() {
-                if to_execute.len() == self.config.computation_costs[node_id].len() - 1 {
-                    break;
+            for core in 1..=self.config.number_of_cores {
+                if self.last_time[core] > t || active.is_empty() {
+                    continue;
                 }
-                if self.get_current_node_id(&active[i]) == node_id {
-                    to_execute.push(active.swap_remove(i));
+                active.sort_by_key(|p| {
+                    (
+                        p.current_core_id == core,
+                        std::cmp::Reverse(p.arrive + p.timeout),
+                    )
+                });
+                let mut to_execute: Vec<Packet> = active.split_off(active.len() - 1);
+                let node_id = self.get_current_node_id(&to_execute[0]);
+                for i in (0..active.len()).rev() {
+                    if to_execute.len() == self.config.computation_costs[node_id].len() - 1 {
+                        break;
+                    }
+                    if self.get_current_node_id(&active[i]) == node_id {
+                        to_execute.push(active.swap_remove(i));
+                    }
                 }
+                let cost = self.execute(t, core, node_id, &mut to_execute);
+                let done = t + cost;
+                to_execute.retain(|p| {
+                    p.current_node_index < self.config.computation_paths[p.type_id].len()
+                });
+                queue.entry(done).or_default().extend(to_execute);
+                self.last_time[core] = done;
             }
-            let cost = self.execute(t, core, node_id, &mut to_execute);
-            let done = t + cost;
-            to_execute
-                .retain(|p| p.current_node_index < self.config.computation_paths[p.type_id].len());
-            queue.entry(done).or_default().extend(to_execute);
-            self.last_time[core] = done;
         }
         true
     }
