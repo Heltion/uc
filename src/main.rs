@@ -1,4 +1,3 @@
-use core::num;
 use std::io::Write;
 
 fn read_many_usize() -> Vec<usize> {
@@ -165,8 +164,12 @@ impl Core {
                 continue;
             }
             let mut to_execute: Vec<Packet> = active.split_off(active.len() - 1);
+            active.sort_by_key(|p| std::cmp::Reverse(p.arrive + p.timeout));
             let node_id = self.get_current_node_id(&to_execute[0]);
             for i in (0..active.len()).rev() {
+                if to_execute.len() == self.config.computation_costs[node_id].len() - 1 {
+                    break;
+                }
                 if self.get_current_node_id(&active[i]) == node_id {
                     to_execute.push(active.swap_remove(i));
                 }
